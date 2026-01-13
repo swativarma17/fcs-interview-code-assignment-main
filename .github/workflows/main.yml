@@ -112,13 +112,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Download coverage reports
-        uses: actions/download-artifact@v4
-        with:
-          name: coverage-reports
-          path: java-assignment/target/
-
+        
       - name: Code quality summary
         run: |
           echo "=== Code Quality Summary ==="
