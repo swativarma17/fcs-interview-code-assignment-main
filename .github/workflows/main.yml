@@ -1,0 +1,115 @@
+
+name: CI
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  push:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Build & Test (Matrix)
+    runs-on: ubuntu-latest
+
+    # Example matrix for Node and Java projects in the same monorepo
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: node-app
+            path: app
+            lang: node
+            node-version: 20
+          - name: java-service
+            path: service
+            lang: java
+            java-version: 17
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: matrix.lang == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: '${{ matrix.path }}/package-lock.json'
+
+      - name: Install (Node)
+        if: matrix.lang == 'node'
+        working-directory: ${{ matrix.path }}
+        run: npm ci
+
+      - name: Lint (Node)
+        if: matrix.lang == 'node'
+        working-directory: ${{ matrix.path }}
+        run: npm run lint --if-present
+
+      - name: Test (Node)
+        if: matrix.lang == 'node'
+        working-directory: ${{ matrix.path }}
+        run: npm test --if-present -- --ci --reporters=default
+
+      - name: Setup Java
+        if: matrix.lang == 'java'
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ matrix.java-version }}
+          cache: 'maven'
+
+      - name: Build & Test (Java - Maven)
+        if: matrix.lang == 'java'
+        working-directory: ${{ matrix.path }}
+        run: mvn -B -ntp clean verify
+
+      # Security scanning examples (optional)
+      - name: Run CodeQL (init)
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.lang == 'node' && 'javascript' || 'java' }}
+
+      - name: CodeQL Analyze
+        uses: github/codeql-action/analyze@v3
+
+      - name: SCA/Secrets Scan (Trivy)
+        uses: aquasecurity/trivy-action@0.20.0
+        with:
+          scan-type: 'fs'
+          exit-code: '1'
+          format: 'table'
+          ignore-unfixed: true
+
+      # (Optional) Build Docker image for preview tags on PRs
+      - name: Login to GitHub Container Registry
+        if: github.event_name == 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push PR Image
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}/app:${{ github.head_ref }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/app:cache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}/app:cache,mode=max
+
+  # Gate to ensure all checks pass before merging
+  status:
+    runs-on: ubuntu-latest
+    needs: [ build-test ]
+    steps:
+      - run: echo "All checks passed."
