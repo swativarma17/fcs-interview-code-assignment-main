@@ -6,6 +6,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.NoSuchElementException;
 
 @ApplicationScoped
 public class LocationGateway implements LocationResolver {
@@ -34,7 +35,9 @@ public class LocationGateway implements LocationResolver {
               return location;
           }
       }
-      //throw new UnsupportedOperationException("Unimplemented method 'resolveByIdentifier'");
-      return null;
+
+      throw new NoSuchElementException(
+              String.format("Location not found for identifier '%s'.", identifier));
+
   }
 }
